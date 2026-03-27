@@ -1,9 +1,9 @@
-# Siren 🚨 - Deepfake Voice Detection AI
+# OdioCheck 🚨 - Deepfake Voice Detection AI
 *50.021 Artificial Intelligence Project*
 
 ## Theme
 **AI for Security & Social Good** (UN SDG #16: Peace, Justice, and Strong Institutions)
-Siren tackles the rising threat of audio deepfakes used in scams and misdirection.
+OdioCheck tackles the rising threat of audio deepfakes used in scams and misdirection.
 
 ## Requirements Checklist
 - [x] **Fully functioning code:** Complete end-to-end PyTorch implementation handling dataset modeling to inference.
