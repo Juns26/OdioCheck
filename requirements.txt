@@ -1,0 +1,12 @@
+torch
+torchaudio
+torchvision
+fastapi
+uvicorn
+python-multipart
+librosa
+scikit-learn
+matplotlib
+seaborn
+tqdm
+python-pptx

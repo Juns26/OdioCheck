@@ -1,0 +1,8 @@
+.venv
+MLAAD-tiny/
+data/
+Download_sample (Ignore)/
+*.pth
+__pycache__/
+project_requirements.txt
+generate_notebook.py

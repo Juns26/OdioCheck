@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Siren | Deepfake Voice Detection</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans min-h-screen flex flex-col items-center justify-center p-6 subtle-bg">
+
+    <div class="glass-card max-w-2xl w-full rounded-3xl p-8 relative overflow-hidden transition-all duration-300">
+        <!-- Glowing Orb Background -->
+        <div class="absolute -top-32 -left-32 w-64 h-64 bg-indigo-600 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse"></div>
+        <div class="absolute -bottom-32 -right-32 w-64 h-64 bg-fuchsia-600 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse" style="animation-delay: 2s;"></div>
+
+        <div class="relative z-10">
+            <h1 class="text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-300">
+                Siren
+            </h1>
+            <p class="text-slate-400 mb-8 font-light">Advanced Deepfake Voice Detection powered by SOTA Transformer architecture. Ensure digital sovereignty.</p>
+
+            <div id="drop-zone" class="border-2 border-dashed border-slate-600 rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer hover:border-indigo-400 hover:bg-slate-800/50 transition-all duration-300 group">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 text-slate-500 group-hover:text-indigo-400 mb-4 transition-colors">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+                </svg>
+                <p class="text-lg text-slate-300 font-medium">Click to upload or drag & drop</p>
+                <p class="text-sm text-slate-500 mt-1">Supports WAV, OGG, MP3, FLAC, M4A & more</p>
+                <input type="file" id="file-input" class="hidden" accept="audio/*">
+            </div>
+
+            <!-- Analysis Section -->
+            <div id="analysis-section" class="mt-8 hidden opacity-0 transition-opacity duration-500">
+                <div class="flex items-center space-x-4 mb-6">
+                    <div id="loading-spinner" class="hidden">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-400"></div>
+                    </div>
+                    <h2 id="status-text" class="text-xl font-semibold text-slate-300">Analyzing Spectrogram...</h2>
+                </div>
+
+                <!-- Results: panels will be inserted via JavaScript based on response keys -->
+                <div id="results" class="hidden">
+                    <div id="model-panels" class="grid grid-cols-2 gap-6"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Additional Graph Section for wow factor -->
+    <div id="chart-card" class="glass-card max-w-2xl w-full rounded-3xl p-8 mt-6 hidden opacity-0 transition-opacity duration-500">
+        <h3 class="text-lg font-semibold mb-4 text-slate-300">Confidence Analysis Timeline</h3>
+        <canvas id="audioChart" height="100"></canvas>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
