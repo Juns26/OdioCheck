@@ -38,12 +38,6 @@ huggingface-cli download mueller91/MLAAD-tiny --repo-type dataset --local-dir ML
    ```
    *The server starts on `http://127.0.0.1:8000`. It launches the highly aesthetic visualizer UI, loads all trained models (**Wav2Vec2, AASIST, CQCC, and Custom Fusion**) and shows predictions from each side‑by‑side. Try uploading or dropping a `.wav` file directly to see the multi‑model comparison!* 
 
-3. **Generate Presentation Slides:**
-   ```bash
-   python generate_slides.py
-   ```
-   *This compiles `Project_Proposal_Slides.pptx` matching the grading criteria (problem ideation, dataset, baseline, and SOTA comparison methodology).*
-
 ## Working with Other Datasets
 To replace the MLAAD-tiny dataset with another dataset like ASVspoof:
 1. Simply place your `fake/` and `original/` (or `real/`) audio folders into a `data/` directory at the project root.
