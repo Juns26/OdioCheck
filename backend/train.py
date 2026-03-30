@@ -1,4 +1,5 @@
 import os
+import argparse
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
@@ -125,7 +126,71 @@ def evaluate_model(model, dataloader, input_type='mel', device=None):
     return fpr, tpr, roc_auc, eer, min_dcf
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train spoof-detection models with optional CQCC caching.")
+    parser.add_argument(
+        "--cqcc-cache-dir", # this is where cqcc is stored
+        default=os.path.join(os.path.dirname(__file__), "precomputed_features", "cqcc"),
+        help="Directory used to store and reuse precomputed CQCC tensors."
+    )
+    parser.add_argument(
+        "--precompute-cqcc-only", 
+        action="store_true",
+        help="Only build the CQCC cache and exit without training."
+    )
+    parser.add_argument(
+        "--subset-size", # this is where cqcc is stored
+        type=int,
+        default=100,
+        help="Optional subset size for debugging. Set <= 0 to use the full dataset."
+    )
+    parser.add_argument(
+        "--force-rebuild-cqcc",
+        action="store_true",
+        help="Recompute cached CQCC files even if they already exist."
+    )
+    parser.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help="Load one batch, run a forward pass through each model, and exit without training."
+    )
+    return parser.parse_args()
+
+
+def run_smoke_test(dataloader, device):
+    print("\n--- Running Smoke Test ---")
+    batch = next(iter(dataloader))
+    mels, wavs, cqccs, labels = batch
+
+    models_to_test = [
+        ("Wav2Vec2 Baseline", Wav2Vec2SpoofDetector(num_classes=2).to(device), "wav"),
+        ("AASIST Baseline", AASISTDetector(num_classes=2).to(device), "mel"),
+        ("CQCC Baseline", CQCCBaselineDetector(num_classes=2).to(device), "cqcc"),
+        ("Custom Fusion Model", ImprovedWav2Vec2CQCCDetector(num_classes=2).to(device), "wav_and_cqcc"),
+    ]
+
+    with torch.no_grad():
+        for name, model, input_type in models_to_test:
+            model.eval()
+            if input_type == "mel":
+                outputs = model(mels.to(device))
+            elif input_type == "wav":
+                outputs = model(wavs.to(device))
+            elif input_type == "cqcc":
+                outputs = model(cqccs.to(device))
+            elif input_type == "wav_and_cqcc":
+                outputs = model(wavs.to(device), cqccs.to(device))
+            else:
+                raise ValueError("invalid input_type")
+
+            print(f"{name}: input OK, output shape = {tuple(outputs.shape)}")
+
+    print(f"Labels shape = {tuple(labels.shape)}")
+    print("Smoke test complete. Cached CQCC loading and model forward passes succeeded.")
+
+
 def main():
+    args = parse_args()
     
     # ------------------
     # Universal Seed for Colab Reproducibility
@@ -144,11 +209,18 @@ def main():
 
     print("Loading Dataset with Augmentation...")
 
-    dataset = AudioDataset(augment=True)
+    dataset = AudioDataset(augment=True, cqcc_cache_dir=args.cqcc_cache_dir)
+    print(f"Using CQCC cache dir: {args.cqcc_cache_dir}")
+    dataset.precompute_cqcc_cache(force=args.force_rebuild_cqcc)
+
+    if args.precompute_cqcc_only:
+        print("CQCC preprocessing complete. Exiting without training.")
+        return
     
     # Optional subset for debugging because MLAAD-tiny is big (13K)
-    subset_size = 100
-    dataset = torch.utils.data.Subset(dataset, range(subset_size))
+    if args.subset_size and args.subset_size > 0:
+        subset_size = min(args.subset_size, len(dataset))
+        dataset = torch.utils.data.Subset(dataset, range(subset_size))
 
     train_size = int(0.8 * len(dataset))
     test_size = len(dataset) - train_size
@@ -174,6 +246,10 @@ def main():
         shuffle=False,
         collate_fn=collate_variable_length
     )
+
+    if args.smoke_test:
+        run_smoke_test(train_loader, device)
+        return
 
     models_dir = os.path.join(os.path.dirname(__file__), "models")
     os.makedirs(models_dir, exist_ok=True)

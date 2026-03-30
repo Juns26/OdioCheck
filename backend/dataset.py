@@ -1,4 +1,5 @@
 import os
+import hashlib
 import torch
 import torchaudio
 import numpy as np
@@ -27,8 +28,28 @@ def generate_dummy_audio(num_samples=100, path='data/'):
         fake_wav = real_wav + artifact.unsqueeze(0)
         scipy.io.wavfile.write(f'{path}/fake/sample_{i}.wav', 16000, fake_wav.squeeze(0).numpy())
 
+
+def compute_cqcc(wav_np, n_bins, sample_rate=16000, hop_length=160, num_coeffs=20):
+    """Compute CQCC features from a mono waveform numpy array."""
+    try:
+        cqt = np.abs(
+            librosa.cqt(
+                wav_np,
+                sr=sample_rate,
+                n_bins=n_bins,
+                hop_length=hop_length,
+                fmin=librosa.note_to_hz('C1')
+            )
+        )
+        log_power = librosa.amplitude_to_db(cqt, ref=np.max)
+        cqcc = dct(log_power, type=2, axis=0, norm='ortho')[:num_coeffs]
+        return torch.from_numpy(cqcc).unsqueeze(0).float()
+    except Exception:
+        # Fallback for very short or invalid audio.
+        return torch.zeros((1, num_coeffs, 10), dtype=torch.float32)
+
 class AudioDataset(Dataset):
-    def __init__(self, data_dir=None, n_mels=60, augment=False):
+    def __init__(self, data_dir=None, n_mels=60, augment=False, cqcc_cache_dir=None):
         if data_dir is None:
             # Check if MLAAD-tiny exists, else fallback to 'data'
             mlaad_dir = os.path.join(os.path.dirname(__file__), "..", "MLAAD-tiny")
@@ -37,10 +58,12 @@ class AudioDataset(Dataset):
             else:
                 data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
                 
+        self.data_dir = data_dir
         self.files = []
         self.labels = []
         self.n_mels = n_mels
         self.augment = augment
+        self.cqcc_cache_dir = cqcc_cache_dir
         
         real_path = os.path.join(data_dir, "original")
         if not os.path.exists(real_path):
@@ -69,8 +92,48 @@ class AudioDataset(Dataset):
         self.freq_mask = torchaudio.transforms.FrequencyMasking(freq_mask_param=10)
         self.time_mask = torchaudio.transforms.TimeMasking(time_mask_param=20)
 
+        if self.cqcc_cache_dir is not None:
+            os.makedirs(self.cqcc_cache_dir, exist_ok=True)
+
     def __len__(self):
         return len(self.files)
+
+    def _cqcc_cache_path(self, audio_path):
+        rel_path = os.path.relpath(audio_path, start=self.data_dir)
+        cache_key = hashlib.md5(audio_path.encode("utf-8")).hexdigest()
+        rel_stem = os.path.splitext(rel_path)[0]
+        safe_name = rel_stem.replace(os.sep, "__")
+        return os.path.join(self.cqcc_cache_dir, f"{safe_name}_{cache_key}.pt")
+
+    def _load_or_compute_cqcc(self, idx, wav_np):
+        if self.cqcc_cache_dir is None:
+            return compute_cqcc(wav_np, n_bins=self.n_mels)
+
+        cache_path = self._cqcc_cache_path(self.files[idx])
+        if os.path.exists(cache_path):
+            return torch.load(cache_path, map_location="cpu")
+
+        cqcc = compute_cqcc(wav_np, n_bins=self.n_mels)
+        torch.save(cqcc, cache_path)
+        return cqcc
+
+    def precompute_cqcc_cache(self, force=False):
+        """Materialize CQCC features to disk so training can reuse them."""
+        if self.cqcc_cache_dir is None:
+            raise ValueError("cqcc_cache_dir must be set to precompute CQCC features.")
+
+        total = len(self.files)
+        for idx, audio_path in enumerate(self.files):
+            cache_path = self._cqcc_cache_path(audio_path)
+            if not force and os.path.exists(cache_path):
+                continue
+
+            wav_np, _ = librosa.load(audio_path, sr=16000, mono=True)
+            cqcc = compute_cqcc(wav_np, n_bins=self.n_mels)
+            torch.save(cqcc, cache_path)
+
+            if (idx + 1) % 100 == 0 or idx + 1 == total:
+                print(f"Precomputed CQCC {idx + 1}/{total}")
 
     def __getitem__(self, idx):
         wav_np, sr = librosa.load(self.files[idx], sr=16000, mono=True)
@@ -90,15 +153,7 @@ class AudioDataset(Dataset):
             mel = self.freq_mask(mel)
             mel = self.time_mask(mel)
             
-        # Compute CQCC based on librosa CQT
-        try:
-            cqt = np.abs(librosa.cqt(wav_np, sr=16000, n_bins=self.n_mels, hop_length=160, fmin=librosa.note_to_hz('C1')))
-            log_power = librosa.amplitude_to_db(cqt, ref=np.max)
-            cqcc = dct(log_power, type=2, axis=0, norm='ortho')[:20]  # keep 20 coeffs
-            cqcc = torch.from_numpy(cqcc).unsqueeze(0).float()
-        except Exception:
-            # Fallback for very short audio
-            cqcc = torch.zeros((1, 20, 10))
+        cqcc = self._load_or_compute_cqcc(idx, wav_np)
 
         return mel, wav, cqcc, self.labels[idx]
 
