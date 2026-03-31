@@ -204,6 +204,12 @@ def main():
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(SEED)
 
+    g = torch.Generator()
+    g.manual_seed(SEED)
+
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     print(f"Using device: {device}")
@@ -211,7 +217,6 @@ def main():
     print("Loading Dataset with Augmentation...")
 
     dataset = AudioDataset(augment=False, cqcc_cache_dir=args.cqcc_cache_dir)
-    print(dataset)
     print(f"Using CQCC cache dir: {args.cqcc_cache_dir}")
     dataset.precompute_cqcc_cache(force=args.force_rebuild_cqcc)
 
@@ -264,16 +269,21 @@ def main():
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size=8,
+        batch_size=16,
         shuffle=True,
-        collate_fn=collate_variable_length
+        collate_fn=collate_variable_length,
+        num_workers=2,
+        pin_memory=True,
+        generator=g, # ensure reproducible shuffling
     )
 
     test_loader = DataLoader(
         test_dataset,
-        batch_size=8,
+        batch_size=16,
         shuffle=False,
-        collate_fn=collate_variable_length
+        collate_fn=collate_variable_length,
+        num_workers=2,
+        pin_memory=True
     )
 
     if args.smoke_test:

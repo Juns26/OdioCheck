@@ -7,28 +7,6 @@ from torch.utils.data import Dataset
 import librosa
 from scipy.fftpack import dct
 
-def generate_dummy_audio(num_samples=100, path='data/'):
-    os.makedirs(os.path.join(path, "real"), exist_ok=True)
-    os.makedirs(os.path.join(path, "fake"), exist_ok=True)
-    
-    if len(os.listdir(os.path.join(path, "real"))) > 0:
-        return
-
-    print("Generating demo fake/real synthetic dataset...")
-    for i in range(num_samples):
-        # "real" audio: pure white noise
-        import scipy.io.wavfile
-        real_wav = torch.randn(1, 16000) * 0.1
-        scipy.io.wavfile.write(f'{path}/real/sample_{i}.wav', 16000, real_wav.squeeze(0).numpy())
-        
-        # "fake" audio: Add some sinusoidal high frequency artifacts 
-        # to simulate robotic/deepfake generation artifacts.
-        t = torch.linspace(0, 1, 16000)
-        artifact = torch.sin(2 * 3.1415 * 5000 * t) * 0.05
-        fake_wav = real_wav + artifact.unsqueeze(0)
-        scipy.io.wavfile.write(f'{path}/fake/sample_{i}.wav', 16000, fake_wav.squeeze(0).numpy())
-
-
 def compute_cqcc(wav_np, n_bins, sample_rate=16000, hop_length=160, num_coeffs=20):
     """Compute CQCC features from a mono waveform numpy array."""
     try:
@@ -70,9 +48,6 @@ class AudioDataset(Dataset):
             real_path = os.path.join(data_dir, "real")
             
         fake_path = os.path.join(data_dir, "fake")
-        
-        if not os.path.exists(real_path) or not os.path.exists(fake_path):
-            generate_dummy_audio(100, data_dir)
             
         for root, dirs, files in os.walk(real_path):
             for f in files:
