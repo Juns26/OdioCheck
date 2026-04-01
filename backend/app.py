@@ -70,14 +70,6 @@ custom_hybrid_model = load_model(
 # -------------------------------------------------------
 # Audio preprocessing
 # -------------------------------------------------------
-mel_transform = torchaudio.transforms.MelSpectrogram(
-    sample_rate=16000,
-    n_mels=128,
-    n_fft=400,
-    hop_length=160
-).to(device)
-
-amp_to_db = torchaudio.transforms.AmplitudeToDB().to(device)
 
 
 # -------------------------------------------------------
@@ -102,7 +94,6 @@ async def predict(file: UploadFile = File(...)):
             wav = wav[:, :target_len]
 
         wav = wav.to(device)
-        mel = amp_to_db(mel_transform(wav)).unsqueeze(0)
 
         # Placeholder for CQCC extraction, normally you'd use a CQCC library here.
         # Generating a dummy tensor of shape (1, 1, 20, T) to avoid crashing the models for now.
@@ -112,7 +103,7 @@ async def predict(file: UploadFile = File(...)):
             wav2vec_out = wav2vec_model(wav)
             wav2vec_prob = torch.softmax(wav2vec_out, dim=1)[0][1].item()
 
-            aasist_out = aasist_model(mel)
+            aasist_out = aasist_model(wav)
             aasist_prob = torch.softmax(aasist_out, dim=1)[0][1].item()
 
             # Pass dummy CQCC to CQCC and Custom models for now

@@ -16,7 +16,7 @@ import numpy as np
 import random
 
 
-def train_model(model, dataloader, criterion, optimizer, epochs=5, input_type='mel', device=None):
+def train_model(model, dataloader, criterion, optimizer, epochs=5, input_type='wav', device=None):
     """Train model on dataset."""
 
     if device is None:
@@ -33,14 +33,12 @@ def train_model(model, dataloader, criterion, optimizer, epochs=5, input_type='m
 
         for batch in dataloader:
 
-            if input_type == 'mel':
+            if input_type == 'wav':
                 outputs = model(batch[0].to(device))
-            elif input_type == 'wav':
-                outputs = model(batch[1].to(device))
             elif input_type == 'cqcc':
-                outputs = model(batch[2].to(device))
+                outputs = model(batch[1].to(device))
             elif input_type == 'wav_and_cqcc':
-                outputs = model(batch[1].to(device), batch[2].to(device))
+                outputs = model(batch[0].to(device), batch[1].to(device))
             else:
                 raise ValueError("invalid input_type")
 
@@ -70,7 +68,7 @@ def train_model(model, dataloader, criterion, optimizer, epochs=5, input_type='m
     return loss_history
 
 
-def evaluate_model(model, dataloader, input_type='mel', device=None):
+def evaluate_model(model, dataloader, input_type='wav', device=None):
 
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -84,14 +82,12 @@ def evaluate_model(model, dataloader, input_type='mel', device=None):
 
         for batch in dataloader:
 
-            if input_type == 'mel':
+            if input_type == 'wav':
                 outputs = model(batch[0].to(device))
-            elif input_type == 'wav':
-                outputs = model(batch[1].to(device))
             elif input_type == 'cqcc':
-                outputs = model(batch[2].to(device))
+                outputs = model(batch[1].to(device))
             elif input_type == 'wav_and_cqcc':
-                outputs = model(batch[1].to(device), batch[2].to(device))
+                outputs = model(batch[0].to(device), batch[1].to(device))
 
             labels = batch[-1].to(device)
 
@@ -160,11 +156,11 @@ def parse_args():
 def run_smoke_test(dataloader, device):
     print("\n--- Running Smoke Test ---")
     batch = next(iter(dataloader))
-    mels, wavs, cqccs, labels = batch
+    wavs, cqccs, labels = batch
 
     models_to_test = [
         ("Wav2Vec2 Baseline", Wav2Vec2SpoofDetector(num_classes=2).to(device), "wav"),
-        ("AASIST Baseline", AASISTDetector(num_classes=2).to(device), "mel"),
+        ("AASIST Baseline", AASISTDetector(num_classes=2).to(device), "wav"),
         ("CQCC Baseline", CQCCBaselineDetector(num_classes=2).to(device), "cqcc"),
         ("Custom Fusion Model", ImprovedWav2Vec2CQCCDetector(num_classes=2).to(device), "wav_and_cqcc"),
     ]
@@ -172,9 +168,7 @@ def run_smoke_test(dataloader, device):
     with torch.no_grad():
         for name, model, input_type in models_to_test:
             model.eval()
-            if input_type == "mel":
-                outputs = model(mels.to(device))
-            elif input_type == "wav":
+            if input_type == "wav":
                 outputs = model(wavs.to(device))
             elif input_type == "cqcc":
                 outputs = model(cqccs.to(device))
@@ -331,7 +325,7 @@ def main():
         train_loader,
         criterion,
         optimizer_aasist,
-        input_type='mel',
+        input_type='wav',
         device=device
     )
 
@@ -389,7 +383,7 @@ def main():
 
     models_to_eval = [
         ("Wav2Vec2 Baseline", wav2vec_model, 'wav'),
-        ("AASIST Baseline", aasist_model, 'mel'),
+        ("AASIST Baseline", aasist_model, 'wav'),
         ("CQCC Baseline", cqcc_baseline, 'cqcc'),
         ("Custom Fusion Model", custom_model, 'wav_and_cqcc')
     ]

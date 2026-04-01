@@ -61,11 +61,7 @@ class AudioDataset(Dataset):
                     self.files.append(os.path.join(root, f))
                     self.labels.append(1) # 1 = Fake
             
-        self.mel_spectrogram = torchaudio.transforms.MelSpectrogram(
-            sample_rate=16000, n_mels=n_mels, n_fft=400, hop_length=160
-        )
-        self.freq_mask = torchaudio.transforms.FrequencyMasking(freq_mask_param=10)
-        self.time_mask = torchaudio.transforms.TimeMasking(time_mask_param=20)
+
 
         if self.cqcc_cache_dir is not None:
             os.makedirs(self.cqcc_cache_dir, exist_ok=True)
@@ -120,35 +116,15 @@ class AudioDataset(Dataset):
 
         wav = torch.from_numpy(wav_np).unsqueeze(0).float()
 
-        mel = self.mel_spectrogram(wav)
-        mel = torchaudio.transforms.AmplitudeToDB()(mel)
-        
-        # Spectrogram Augmentation
-        if self.augment and torch.rand(1).item() < 0.5:
-            mel = self.freq_mask(mel)
-            mel = self.time_mask(mel)
-            
         cqcc = self._load_or_compute_cqcc(idx, wav_np)
 
-        return mel, wav, cqcc, self.labels[idx]
+        return wav, cqcc, self.labels[idx]
 
 
 def collate_variable_length(batch):
 
-    mels, wavs, cqccs, labels = zip(*batch)
+    wavs, cqccs, labels = zip(*batch)
     labels = torch.tensor(labels)
-
-    # ---------- MEL ----------
-    max_mel_time = max(m.shape[-1] for m in mels)
-
-    mels_padded = []
-    for m in mels:
-        if m.shape[-1] < max_mel_time:
-            pad = max_mel_time - m.shape[-1]
-            m = torch.nn.functional.pad(m, (0, pad))
-        mels_padded.append(m)
-
-    mels = torch.stack(mels_padded, dim=0)
 
     # ---------- WAVE ----------
     max_wav_len = max(w.shape[-1] for w in wavs)
@@ -174,4 +150,4 @@ def collate_variable_length(batch):
 
     cqccs = torch.stack(cqccs_padded, dim=0)
 
-    return mels, wavs, cqccs, labels
+    return wavs, cqccs, labels
