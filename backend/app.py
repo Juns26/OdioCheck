@@ -1,12 +1,13 @@
 import os
 import torch
-import torchaudio
 import torch.nn.functional as F
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from dataset import compute_cqcc
 import sys
+import librosa
 
 sys.path.append(os.path.dirname(__file__))
 
@@ -68,11 +69,6 @@ custom_hybrid_model = load_model(
 
 
 # -------------------------------------------------------
-# Audio preprocessing
-# -------------------------------------------------------
-
-
-# -------------------------------------------------------
 # Prediction Endpoint
 # -------------------------------------------------------
 @app.post("/api/predict")
@@ -82,22 +78,16 @@ async def predict(file: UploadFile = File(...)):
         with open(temp_path, "wb") as f:
             f.write(await file.read())
 
-        import librosa
         wav_np, sr = librosa.load(temp_path, sr=16000, mono=True)
-        wav = torch.from_numpy(wav_np).unsqueeze(0).float()
 
-        # Pad / crop to 2 seconds
         target_len = 32000
-        if wav.shape[1] < target_len:
-            wav = F.pad(wav, (0, target_len - wav.shape[1]))
+        if len(wav_np) < target_len:
+            wav_np = np.pad(wav_np, (0, target_len - len(wav_np)))
         else:
-            wav = wav[:, :target_len]
+            wav_np = wav_np[:target_len]
 
-        wav = wav.to(device)
-
-        # Placeholder for CQCC extraction, normally you'd use a CQCC library here.
-        # Generating a dummy tensor of shape (1, 1, 20, T) to avoid crashing the models for now.
-        dummy_cqcc = torch.randn(1, 1, 20, 100).to(device) 
+        wav = torch.from_numpy(wav_np).unsqueeze(0).float().to(device)
+        cqcc = compute_cqcc(wav_np, n_bins=60).unsqueeze(0).to(device)
 
         with torch.no_grad():
             wav2vec_out = wav2vec_model(wav)
@@ -106,11 +96,10 @@ async def predict(file: UploadFile = File(...)):
             aasist_out = aasist_model(wav)
             aasist_prob = torch.softmax(aasist_out, dim=1)[0][1].item()
 
-            # Pass dummy CQCC to CQCC and Custom models for now
-            cqcc_out = cqcc_baseline_model(dummy_cqcc)
+            cqcc_out = cqcc_baseline_model(cqcc)
             cqcc_prob = torch.softmax(cqcc_out, dim=1)[0][1].item()
 
-            custom_out = custom_hybrid_model(wav, dummy_cqcc)
+            custom_out = custom_hybrid_model(wav, cqcc)
             custom_prob = torch.softmax(custom_out, dim=1)[0][1].item()
 
         result = {
@@ -138,14 +127,11 @@ async def predict(file: UploadFile = File(...)):
         return JSONResponse(result)
 
     except Exception as e:
-
         return JSONResponse({"error": str(e)}, status_code=500)
 
     finally:
-
         if os.path.exists(temp_path):
             os.remove(temp_path)
-
 
 # -------------------------------------------------------
 # Serve frontend

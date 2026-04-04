@@ -2,7 +2,7 @@ import os
 import argparse
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
 from dataset import AudioDataset, collate_variable_length
 from models import (
     AASISTDetector,
@@ -10,29 +10,21 @@ from models import (
     CQCCBaselineDetector,
     ImprovedWav2Vec2CQCCDetector
 )
-import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
 import numpy as np
 import random
 
 
 def train_model(model, dataloader, criterion, optimizer, epochs=5, input_type='wav', device=None):
-    """Train model on dataset."""
-
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
     model.train()
     loss_history = []
-
     for epoch in range(epochs):
-
         epoch_loss = 0
         correct = 0
         total = 0
-
         for batch in dataloader:
-
             if input_type == 'wav':
                 outputs = model(batch[0].to(device))
             elif input_type == 'cqcc':
@@ -41,61 +33,40 @@ def train_model(model, dataloader, criterion, optimizer, epochs=5, input_type='w
                 outputs = model(batch[0].to(device), batch[1].to(device))
             else:
                 raise ValueError("invalid input_type")
-
             labels = batch[-1].to(device)
-
             optimizer.zero_grad()
-
             loss = criterion(outputs, labels)
-
             loss.backward()
             optimizer.step()
-
             epoch_loss += loss.item()
-
             _, predicted = torch.max(outputs.data, 1)
-
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
-
         acc = 100 * correct / total if total > 0 else 0
         avg_loss = epoch_loss / len(dataloader)
-
         loss_history.append(avg_loss)
-
         print(f"Epoch {epoch+1}/{epochs} | Loss: {avg_loss:.4f} | Acc: {acc:.2f}%")
-
     return loss_history
 
 
 def evaluate_model(model, dataloader, input_type='wav', device=None):
-
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
     model.eval()
-
     all_labels = []
     all_probs = []
-
     with torch.no_grad():
-
         for batch in dataloader:
-
             if input_type == 'wav':
                 outputs = model(batch[0].to(device))
             elif input_type == 'cqcc':
                 outputs = model(batch[1].to(device))
             elif input_type == 'wav_and_cqcc':
                 outputs = model(batch[0].to(device), batch[1].to(device))
-
             labels = batch[-1].to(device)
-
             probs = torch.softmax(outputs, dim=1)[:, 1]
-
             all_labels.extend(labels.tolist())
             all_probs.extend(probs.tolist())
-
     fpr, tpr, thresholds = roc_curve(all_labels, all_probs)
     roc_auc = auc(fpr, tpr)
     
@@ -125,6 +96,11 @@ def evaluate_model(model, dataloader, input_type='wav', device=None):
 def parse_args():
     parser = argparse.ArgumentParser(description="Train spoof-detection models with optional CQCC caching.")
     parser.add_argument(
+        "--data-dir",
+        default=None,
+        help="Path to dataset root containing original/ and fake/ folders."
+    )
+    parser.add_argument(
         "--cqcc-cache-dir", # this is where cqcc is stored
         default=os.path.join(os.path.dirname(__file__), "precomputed_features", "cqcc"),
         help="Directory used to store and reuse precomputed CQCC tensors."
@@ -135,7 +111,7 @@ def parse_args():
         help="Only build the CQCC cache and exit without training."
     )
     parser.add_argument(
-        "--subset-size", # this is where cqcc is stored
+        "--subset-size",
         type=int,
         default=100,
         help="Optional subset size for debugging. Set <= 0 to use the full dataset."
@@ -186,11 +162,6 @@ def run_smoke_test(dataloader, device):
 def main():
     args = parse_args()
     print(args)
-    
-    # ------------------
-    # Universal Seed for Colab Reproducibility
-    # Ensure exact same train/test splits across separate script rums
-    # ------------------
     SEED = 42
     random.seed(SEED)
     np.random.seed(SEED)
@@ -209,20 +180,12 @@ def main():
     print(f"Using device: {device}")
 
     print("Loading Dataset with Augmentation...")
-
-    dataset = AudioDataset(augment=False, cqcc_cache_dir=args.cqcc_cache_dir)
-    print(f"Using CQCC cache dir: {args.cqcc_cache_dir}")
-    dataset.precompute_cqcc_cache(force=args.force_rebuild_cqcc)
-
+    dataset = AudioDataset(data_dir=args.data_dir, augment=False, cqcc_cache_dir=args.cqcc_cache_dir)
+    
     if args.precompute_cqcc_only:
         print("CQCC preprocessing complete. Exiting without training.")
         return
     
-    # # Optional subset for debugging because MLAAD-tiny is big (13K)
-    # subset_size = 100
-    # dataset = torch.utils.data.Subset(dataset, range(subset_size))
-
-    #sample n for real and fake each for training and testing
     n_real = 400
     n_fake = 400 
     
@@ -263,7 +226,7 @@ def main():
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size=16,
+        batch_size=4,
         shuffle=True,
         collate_fn=collate_variable_length,
         num_workers=2,
@@ -273,7 +236,7 @@ def main():
 
     test_loader = DataLoader(
         test_dataset,
-        batch_size=16,
+        batch_size=1,
         shuffle=False,
         collate_fn=collate_variable_length,
         num_workers=2,
@@ -289,117 +252,125 @@ def main():
 
     criterion = nn.CrossEntropyLoss()
 
+    # # ============================================================
+    # # 1 Wav2Vec2 Baseline
+    # # ============================================================
+
+    # print("\n--- Training Wav2Vec2 Baseline ---")
+
+    # wav2vec_model = Wav2Vec2SpoofDetector(num_classes=2).to(device)
+
+    # optimizer_wav2vec = torch.optim.Adam(wav2vec_model.parameters(), lr=1e-4)
+
+    # wav2vec_loss = train_model(
+    #     wav2vec_model,
+    #     train_loader,
+    #     criterion,
+    #     optimizer_wav2vec,
+    #     input_type='wav',
+    #     device=device
+    # )
+
+    # torch.save(wav2vec_model.state_dict(), os.path.join(models_dir, "wav2vec2.pth"))
+    # del wav2vec_model, optimizer_wav2vec
+    # torch.cuda.empty_cache()
+    # # ============================================================
+    # # 2 AASIST Baseline
+    # # ============================================================
+
+    # print("\n--- Training AASIST Baseline ---")
+
+    # aasist_model = AASISTDetector(num_classes=2).to(device)
+
+    # optimizer_aasist = torch.optim.Adam(aasist_model.parameters(), lr=5e-4)
+
+    # aasist_loss = train_model(
+    #     aasist_model,
+    #     train_loader,
+    #     criterion,
+    #     optimizer_aasist,
+    #     input_type='wav',
+    #     device=device
+    # )
+
+    # torch.save(aasist_model.state_dict(), os.path.join(models_dir, "aasist.pth"))
+    # del aasist_model, optimizer_aasist
+    # torch.cuda.empty_cache()
+    # # ============================================================
+    # # 3 CQCC Baseline
+    # # ============================================================
+
+    # print("\n--- Training CQCC Baseline ---")
+
+    # cqcc_baseline = CQCCBaselineDetector(num_classes=2).to(device)
+
+    # optimizer_cqcc = torch.optim.Adam(cqcc_baseline.parameters(), lr=1e-3)
+
+    # cqcc_loss = train_model(
+    #     cqcc_baseline,
+    #     train_loader,
+    #     criterion,
+    #     optimizer_cqcc,
+    #     input_type='cqcc',
+    #     device=device
+    # )
+
+    # torch.save(cqcc_baseline.state_dict(), os.path.join(models_dir, "cqcc_baseline.pth"))
+    # del cqcc_baseline, optimizer_cqcc
+    # torch.cuda.empty_cache()
+    # # ============================================================
+    # # 4 Custom Fusional Wav2Vec2 + CQCC with Cross-Attention + Graph
+    # # ============================================================
+
+    # print("\n--- Training Custom Fusion Detector ---")
+
+    # custom_model = ImprovedWav2Vec2CQCCDetector(num_classes=2).to(device)
+
+    # optimizer_custom = torch.optim.Adam(custom_model.parameters(), lr=1e-4)
+
+    # custom_loss = train_model(
+    #     custom_model,
+    #     train_loader,
+    #     criterion,
+    #     optimizer_custom,
+    #     input_type='wav_and_cqcc',
+    #     device=device
+    # )
+
+    # torch.save(custom_model.state_dict(), os.path.join(models_dir, "custom_hybrid.pth"))
+    # del custom_model, optimizer_custom
+    # torch.cuda.empty_cache()
+    
     # ============================================================
-    # 1 Wav2Vec2 Baseline
+    # Evaluation — reload one at a time
     # ============================================================
-
-    print("\n--- Training Wav2Vec2 Baseline ---")
-
-    wav2vec_model = Wav2Vec2SpoofDetector(num_classes=2).to(device)
-
-    optimizer_wav2vec = torch.optim.Adam(wav2vec_model.parameters(), lr=1e-4)
-
-    wav2vec_loss = train_model(
-        wav2vec_model,
-        train_loader,
-        criterion,
-        optimizer_wav2vec,
-        input_type='wav',
-        device=device
-    )
-
-    torch.save(wav2vec_model.state_dict(), os.path.join(models_dir, "wav2vec2.pth"))
-
-    # ============================================================
-    # 2 AASIST Baseline
-    # ============================================================
-
-    print("\n--- Training AASIST Baseline ---")
-
-    aasist_model = AASISTDetector(num_classes=2).to(device)
-
-    optimizer_aasist = torch.optim.Adam(aasist_model.parameters(), lr=5e-4)
-
-    aasist_loss = train_model(
-        aasist_model,
-        train_loader,
-        criterion,
-        optimizer_aasist,
-        input_type='wav',
-        device=device
-    )
-
-    torch.save(aasist_model.state_dict(), os.path.join(models_dir, "aasist.pth"))
-
-    # ============================================================
-    # 3 CQCC Baseline
-    # ============================================================
-
-    print("\n--- Training CQCC Baseline ---")
-
-    cqcc_baseline = CQCCBaselineDetector(num_classes=2).to(device)
-
-    optimizer_cqcc = torch.optim.Adam(cqcc_baseline.parameters(), lr=1e-3)
-
-    cqcc_loss = train_model(
-        cqcc_baseline,
-        train_loader,
-        criterion,
-        optimizer_cqcc,
-        input_type='cqcc',
-        device=device
-    )
-
-    torch.save(cqcc_baseline.state_dict(), os.path.join(models_dir, "cqcc_baseline.pth"))
-
-    # ============================================================
-    # 4 Custom Fusional Wav2Vec2 + CQCC with Cross-Attention + Graph
-    # ============================================================
-
-    print("\n--- Training Custom Fusion Detector ---")
-
-    custom_model = ImprovedWav2Vec2CQCCDetector(num_classes=2).to(device)
-
-    optimizer_custom = torch.optim.Adam(custom_model.parameters(), lr=1e-4)
-
-    custom_loss = train_model(
-        custom_model,
-        train_loader,
-        criterion,
-        optimizer_custom,
-        input_type='wav_and_cqcc',
-        device=device
-    )
-
-    torch.save(custom_model.state_dict(), os.path.join(models_dir, "custom_hybrid.pth"))
-
-    # ============================================================
-    # Evaluation
-    # ============================================================
-
     print("\n--- Evaluating Models ---")
-
     evals = []
 
     models_to_eval = [
-        ("Wav2Vec2 Baseline", wav2vec_model, 'wav'),
-        ("AASIST Baseline", aasist_model, 'wav'),
-        ("CQCC Baseline", cqcc_baseline, 'cqcc'),
-        ("Custom Fusion Model", custom_model, 'wav_and_cqcc')
+        ("Wav2Vec2 Baseline", Wav2Vec2SpoofDetector, "wav2vec2.pth", 'wav'),
+        ("AASIST Baseline", AASISTDetector, "aasist.pth", 'wav'),
+        ("CQCC Baseline", CQCCBaselineDetector, "cqcc_baseline.pth", 'cqcc'),
+        ("Custom Fusion Model", ImprovedWav2Vec2CQCCDetector, "custom_hybrid.pth", 'wav_and_cqcc'),
     ]
 
-    for name, model_obj, inp in models_to_eval:
+    for name, model_class, filename, inp in models_to_eval:
+        model_obj = model_class(num_classes=2).to(device)
+        model_obj.load_state_dict(torch.load(
+            os.path.join(models_dir, filename),
+            map_location=device
+        ))
+        model_obj.eval()
 
         fpr, tpr, auc_val, eer, min_dcf = evaluate_model(
-            model_obj,
-            test_loader,
-            input_type=inp,
-            device=device
+            model_obj, test_loader, input_type=inp, device=device
         )
 
         evals.append((name, fpr, tpr, auc_val, eer, min_dcf))
-
         print(f"{name} | AUC={auc_val:.3f} | EER={eer*100:.2f}% | minDCF={min_dcf:.4f}")
+
+        del model_obj
+        torch.cuda.empty_cache()
 
 if __name__ == "__main__":
     main()
