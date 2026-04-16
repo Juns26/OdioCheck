@@ -1,4 +1,9 @@
 import os
+import sys
+
+# Add the current directory to sys.path so we can import local modules
+sys.path.append(os.path.dirname(__file__))
+
 import torch
 import numpy as np
 import torch.nn.functional as F
@@ -7,10 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from dataset import compute_cqcc
-import sys
 import librosa
-
-sys.path.append(os.path.dirname(__file__))
 
 from models import (
     Wav2Vec2SpoofDetector,
