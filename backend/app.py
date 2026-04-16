@@ -23,6 +23,10 @@ from models import (
 
 app = FastAPI(title="Deepfake Voice Detection")
 
+@app.get("/health")
+def health():
+    return {"status": "online"}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
