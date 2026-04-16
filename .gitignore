@@ -1,0 +1,18 @@
+.venv
+MLAAD-tiny/
+data/
+*.pth
+Download_sample (Ignore)/
+__pycache__/
+project_requirements.txt
+generate_notebook.py
+backend/precomputed_features/
+
+# Models
+*.pth
+backend/models/*.pth
+
+# Environment
+.env
+.DS_Store
+node_modules/

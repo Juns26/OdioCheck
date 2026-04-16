@@ -1,0 +1,17 @@
+datasets == 2.21.0
+fastapi
+librosa
+matplotlib
+numpy
+python-multipart
+python-pptx
+scikit-learn
+scipy
+seaborn
+soundfile
+torch>=2.6.0
+torchaudio
+torchvision
+tqdm
+transformers
+uvicorn
