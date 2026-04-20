@@ -1,3 +1,8 @@
+const BACKEND_HEALTH_URL = 'https://junsiang26-odiocheck-backend.hf.space/health';
+
+// Wake up the backend immediately when the page loads
+fetch(BACKEND_HEALTH_URL).catch(() => console.log('Backend waking up...'));
+
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const analysisSection = document.getElementById('analysis-section');
